@@ -3,6 +3,7 @@ import entities.Borrow;
 import entities.Card;
 import org.apache.commons.lang3.RandomUtils;
 import queries.*;
+import queries.SortOrder;
 import utils.ConnectConfig;
 import utils.DatabaseConnector;
 import utils.RandomData;
@@ -422,8 +423,40 @@ public class GUI {
             add(modifyButton);
 
             JButton queryButton = new JButton("Query Book");
-            queryButton.setBounds(100, 430, 170, 30);
+            queryButton.setBounds(100, 550, 170, 30);
             add(queryButton);
+
+            JLabel rangePublishYear = new JLabel("PublishYear");
+            rangePublishYear.setBounds(100, 430, 70, 30);
+            add(rangePublishYear);
+
+            JTextField bookMinPublishYear = new JTextField(70);
+            bookMinPublishYear.setBounds(170, 430, 45, 30);
+            add(bookMinPublishYear);
+
+            JLabel pubL = new JLabel("--");
+            pubL.setBounds(215, 430, 10, 30);
+            add(pubL);
+
+            JTextField bookMaxPublishYear = new JTextField(70);
+            bookMaxPublishYear.setBounds(225, 430, 45, 30);
+            add(bookMaxPublishYear);
+
+            JLabel rangePrice = new JLabel("Price");
+            rangePrice.setBounds(100, 460, 70, 30);
+            add(rangePrice);
+
+            JTextField bookMinPrice = new JTextField(70);
+            bookMinPrice.setBounds(170, 460, 45, 30);
+            add(bookMinPrice);
+
+            JLabel priceL = new JLabel("--");
+            priceL.setBounds(215, 460, 10, 30);
+            add(priceL);
+
+            JTextField bookMaxPrice = new JTextField(70);
+            bookMaxPrice.setBounds(225, 460, 45, 30);
+            add(bookMaxPrice);
 
             JButton bulkStoreBookButton = new JButton("Bulk Store Book");
             bulkStoreBookButton.setBounds(100, 600, 170, 30);
@@ -433,6 +466,23 @@ public class GUI {
             returnMain.setBounds(100, 650, 170, 30);
             add(returnMain);
 
+            JLabel sortCondition = new JLabel("Sort By");
+            sortCondition.setBounds(100, 490, 70, 30);
+            add(sortCondition);
+
+            String[] options = {"Book ID", "Category", "Title", "Press", "PublishYear", "Author", "Price"};
+            JComboBox<String> sortOptions = new JComboBox<>(options);
+            sortOptions.setBounds(170, 490, 100, 30);
+            add(sortOptions);
+
+            JLabel sortOrder = new JLabel("Sort Order");
+            sortOrder.setBounds(100, 520, 70, 30);
+            add(sortOrder);
+
+            String[] orderOptions = {"升序", "降序"};
+            JComboBox<String> sortOrderBox = new JComboBox<>(orderOptions);
+            sortOrderBox.setBounds(170, 520, 100, 30);
+            add(sortOrderBox);
             storeBookButton.addActionListener(new ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent e) {
@@ -538,19 +588,76 @@ public class GUI {
                 @Override
                 public void actionPerformed(ActionEvent e) {
                     BookQueryConditions conditions = new BookQueryConditions();
-                    if(!bookCategory.getText().equals("")){
+                    if(!bookCategory.getText().isEmpty()){
                         String category = bookCategory.getText();
                         conditions.setCategory(category);
                     }
-                    if(!bookTitle.getText().equals("")) {
+                    if(!bookTitle.getText().isEmpty()) {
+                        String title = bookTitle.getText();
+                        conditions.setTitle(title);
+                    }
+                    if(!bookPress.getText().isEmpty()) {
                         String press = bookPress.getText();
                         conditions.setPress(press);
                     }
-                    int publishYear = Integer.parseInt(bookPublishYear.getText());
-                    String author = bookAuthor.getText();
-                    double price = Double.parseDouble(bookPrice.getText());
-                    int stock = Integer.parseInt(bookStock.getText());
-                    int bookID = Integer.parseInt(BookID.getText());
+                    if(!bookMinPublishYear.getText().isEmpty()){
+                        int minPublishYear = Integer.parseInt(bookMinPublishYear.getText());
+                        conditions.setMinPublishYear(minPublishYear);
+                    }
+                    if(!bookMaxPublishYear.getText().isEmpty()){
+                        int maxPublishYear = Integer.parseInt(bookMaxPublishYear.getText());
+                        conditions.setMaxPublishYear(maxPublishYear);
+                    }
+                    if(!bookMinPrice.getText().isEmpty()){
+                        double minPrice = Double.parseDouble(bookMinPrice.getText());
+                        conditions.setMinPrice(minPrice);
+                    }
+                    if(!bookMaxPrice.getText().isEmpty()){
+                        double maxPrice = Double.parseDouble(bookMaxPrice.getText());
+                        conditions.setMaxPrice(maxPrice);
+                    }
+                    if(!bookAuthor.getText().isEmpty()){
+                        String author = bookAuthor.getText();
+                        conditions.setAuthor(author);
+                    }
+                    if(sortOrderBox.getSelectedItem().toString().equals("升序")) {
+                        conditions.setSortOrder(SortOrder.ASC);
+                    } else if(sortOrderBox.getSelectedItem().toString().equals("降序")) {
+                        conditions.setSortOrder(SortOrder.DESC);
+                    }
+                    if(sortOptions.getSelectedItem().toString().equals("Book ID")) {
+                        conditions.setSortBy(Book.SortColumn.BOOK_ID);
+                    } else if(sortOptions.getSelectedItem().toString().equals("Category")) {
+                        conditions.setSortBy(Book.SortColumn.CATEGORY);
+                    } else if(sortOptions.getSelectedItem().toString().equals("Title")) {
+                        conditions.setSortBy(Book.SortColumn.TITLE);
+                    } else if(sortOptions.getSelectedItem().toString().equals("Press")) {
+                        conditions.setSortBy(Book.SortColumn.PRESS);
+                    } else if(sortOptions.getSelectedItem().toString().equals("PublishYear")) {
+                        conditions.setSortBy(Book.SortColumn.PUBLISH_YEAR);
+                    } else if(sortOptions.getSelectedItem().toString().equals("Author")) {
+                        conditions.setSortBy(Book.SortColumn.AUTHOR);
+                    } else if(sortOptions.getSelectedItem().toString().equals("Price")) {
+                        conditions.setSortBy(Book.SortColumn.PRICE);
+                    }
+                    ApiResult result = library.queryBook(conditions);
+                    if(!result.ok) {
+                        JOptionPane.showMessageDialog(storeBookPanel.this, result.message, "Query Failure", JOptionPane.ERROR_MESSAGE);
+                    }
+                    //clear
+                    bookCategory.setText("");
+                    bookTitle.setText("");
+                    bookPress.setText("");
+                    bookPublishYear.setText("");
+                    bookAuthor.setText("");
+                    bookPrice.setText("");
+                    bookStock.setText("");
+                    BookID.setText("");
+                    bookMaxPrice.setText("");
+                    bookMinPrice.setText("");
+                    bookMaxPublishYear.setText("");
+                    bookMinPublishYear.setText("");
+                    refreshBook(conditions);
                 }
             });
 //            refreshBook();
@@ -593,6 +700,10 @@ public class GUI {
             add(bookText);
             addBorrowTable(this);
 
+            JButton showHistory = new JButton("Show History");
+            showHistory.setBounds(100, 560, 170, 30);
+            add(showHistory);
+
             JButton borrowBook = new JButton("Borrow Book");
             borrowBook.setBounds(100, 590, 170, 30);
             add(borrowBook);
@@ -605,6 +716,17 @@ public class GUI {
             returnMain.setBounds(100, 650, 170, 30);
             add(returnMain);
 
+            showHistory.addActionListener(new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    int cardID = Integer.parseInt(cardText.getText());
+                    ApiResult result = library.showBorrowHistory(cardID);
+                    if(!result.ok) {
+                        JOptionPane.showMessageDialog(borrowBookPanel.this, result.message, "Show History Failure", JOptionPane.ERROR_MESSAGE);
+                    }
+                    refreshBorrow(cardID);
+                }
+            });
             borrowBook.addActionListener(new ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent e) {
@@ -681,20 +803,28 @@ public class GUI {
     private static void placeComponents(JPanel mainPanel, JPanel storeBook, JPanel borrowBook, JPanel registerCards, JPanel cards) {
         mainPanel.setLayout(null);
 
+        JLabel Title = new JLabel("图书管理系统");
+        Font font = new Font("微软雅黑", Font.PLAIN, 40);
+        Title.setFont(font);
+        Title.setSize(300, 300);
+        Title.setLocation(480, 100);
+        Title.setHorizontalTextPosition(SwingConstants.CENTER);
+        mainPanel.add(Title);
+
         storeBook.setLayout(null);
         JButton storeBookButton = new JButton("Book");
-        storeBookButton.setBounds(450, 200, 300, 50);
+        storeBookButton.setBounds(450, 300, 300, 50);
         mainPanel.add(storeBookButton);
 
 
         borrowBook.setLayout(null);
         JButton borrowBookButton = new JButton("Borrow");
-        borrowBookButton.setBounds(450, 250, 300, 50);
+        borrowBookButton.setBounds(450, 350, 300, 50);
         mainPanel.add(borrowBookButton);
 
         registerCards.setLayout(null);
         JButton registerButton = new JButton("Card");
-        registerButton.setBounds(450, 300, 300, 50);
+        registerButton.setBounds(450, 400, 300, 50);
         mainPanel.add(registerButton);
 
         storeBookButton.addActionListener(new ActionListener() {
