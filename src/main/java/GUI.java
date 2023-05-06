@@ -140,6 +140,27 @@ public class GUI {
             }
         }
     }
+    public void refreshBook(BookQueryConditions conditions) {
+        DefaultTableModel tableModel = (DefaultTableModel) bookTable.getModel();
+        tableModel.setRowCount(0);
+        ApiResult result = library.queryBook(conditions);
+        if(result.ok) {
+            BookQueryResults queryResults = (BookQueryResults) result.payload;
+            List<Book> books = queryResults.getResults();
+            for(Book book:books) {
+                tableModel.addRow(new Object[]{
+                        book.getBookId(),
+                        book.getCategory(),
+                        book.getTitle(),
+                        book.getPress(),
+                        book.getPublishYear(),
+                        book.getAuthor(),
+                        book.getPrice(),
+                        book.getStock()
+                });
+            }
+        }
+    }
 
     public void refreshBorrow(){//show all borrow History
         DefaultTableModel tableModel = (DefaultTableModel) borrowTable.getModel();
@@ -400,6 +421,10 @@ public class GUI {
             modifyButton.setBounds(100, 400, 170, 30);
             add(modifyButton);
 
+            JButton queryButton = new JButton("Query Book");
+            queryButton.setBounds(100, 430, 170, 30);
+            add(queryButton);
+
             JButton bulkStoreBookButton = new JButton("Bulk Store Book");
             bulkStoreBookButton.setBounds(100, 600, 170, 30);
             add(bulkStoreBookButton);
@@ -419,7 +444,10 @@ public class GUI {
                     double price = Double.parseDouble(bookPrice.getText());
                     int stock = Integer.parseInt(bookStock.getText());
                     Book b0 = new Book(category, title, press, publishYear, author, price, stock);
-                    library.storeBook(b0);
+                    ApiResult result = library.storeBook(b0);
+                    if(!result.ok) {
+                        JOptionPane.showMessageDialog(storeBookPanel.this, result.message, "Store Book Failure", JOptionPane.ERROR_MESSAGE);
+                    }
                     //clear
                     bookCategory.setText("");
                     bookTitle.setText("");
@@ -451,13 +479,19 @@ public class GUI {
                         bookList1.add(cb);
                     }
                     Collections.shuffle(bookList1);
-                    library.storeBook(bookList1);
+                    ApiResult result1 = library.storeBook(bookList1);
+                    if(!result1.ok) {
+                        JOptionPane.showMessageDialog(storeBookPanel.this, result1.message, "Store Book Failure", JOptionPane.ERROR_MESSAGE);
+                    }
                     /* make sure that none of the books are inserted */
                     ApiResult queryResult1 = library.queryBook(new BookQueryConditions());
                     BookQueryResults selectedResults1 = (BookQueryResults) queryResult1.payload;
                     /* normal batch insert */
                     List<Book> bookList2 = new ArrayList<>(bookSet);
-                    library.storeBook(bookList2);
+                    ApiResult result2 = library.storeBook(bookList2);
+                    if(!result2.ok) {
+                        JOptionPane.showMessageDialog(storeBookPanel.this, result2.message, "Store Book Failure", JOptionPane.ERROR_MESSAGE);
+                    }
                     ApiResult queryResult2 = library.queryBook(new BookQueryConditions());
                     bookList2.sort(Comparator.comparingInt(Book::getBookId));
                     refreshBook();
@@ -499,7 +533,27 @@ public class GUI {
                     refreshBook();
                 }
             });
-            refreshBook();
+
+            queryButton.addActionListener(new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    BookQueryConditions conditions = new BookQueryConditions();
+                    if(!bookCategory.getText().equals("")){
+                        String category = bookCategory.getText();
+                        conditions.setCategory(category);
+                    }
+                    if(!bookTitle.getText().equals("")) {
+                        String press = bookPress.getText();
+                        conditions.setPress(press);
+                    }
+                    int publishYear = Integer.parseInt(bookPublishYear.getText());
+                    String author = bookAuthor.getText();
+                    double price = Double.parseDouble(bookPrice.getText());
+                    int stock = Integer.parseInt(bookStock.getText());
+                    int bookID = Integer.parseInt(BookID.getText());
+                }
+            });
+//            refreshBook();
         }
     }
 
@@ -559,9 +613,12 @@ public class GUI {
 
                     Borrow b0 = new Borrow(bookID, cardID);
                     b0.resetBorrowTime();
-                    library.borrowBook(b0);
-                    //clear
+                    ApiResult result = library.borrowBook(b0);
+                    if(!result.ok) {
+                        JOptionPane.showMessageDialog(borrowBookPanel.this, result.message, "Borrow Book Failure", JOptionPane.ERROR_MESSAGE);
+                    }
 
+                    //clear
                     cardText.setText("");
                     bookText.setText("");
                     refreshBorrow();
@@ -575,7 +632,10 @@ public class GUI {
                     int bookID = Integer.parseInt(bookText.getText());
                     Borrow r0 = new Borrow(bookID, cardID);
                     r0.resetReturnTime();
-                    library.returnBook(r0);
+                    ApiResult result = library.returnBook(r0);
+                    if (!result.ok) {
+                        JOptionPane.showMessageDialog(borrowBookPanel.this, result.message, "Return Book Failure", JOptionPane.ERROR_MESSAGE);
+                    }
                     //clear
                     cardText.setText("");
                     bookText.setText("");
