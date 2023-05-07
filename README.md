@@ -20,6 +20,20 @@
 
 ### GUI
 - 基于Java Swing
+- 多个界面跳转
+- 错误信息弹窗
+
+> 书库
+
+![book](pic/book.png)
+
+> 借还
+
+![borrow](pic/borrow.png)
+
+> 借书卡
+
+![card](pic/card.png)
 
 ### DBMS
 - 本实验选用SQLServer
