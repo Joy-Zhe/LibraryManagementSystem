@@ -55,7 +55,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
                 throw new SQLException("Creating book failed, no rows affected.");
             }
 
-            try (ResultSet generatedKeys = bookStatement.getGeneratedKeys()) {
+            try (ResultSet generatedKeys = bookStatement.getGeneratedKeys()) {//获取主键，赋值回book
                 if (generatedKeys.next()) {
                     book.setBookId(generatedKeys.getInt(1));
                 } else {
@@ -123,66 +123,65 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult storeBook(List<Book> books) {
         String checkBook = "SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_year = ? AND author = ?";
         String insertBook = "INSERT INTO book (category, title, press, publish_year, author, price, stock) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        String getLastInsertId = "SELECT IDENT_CURRENT('book')";
         Connection connection = connector.getConn();
 
         try {
+            connection.setAutoCommit(false);
+            PreparedStatement bookStatement = connection.prepareStatement(checkBook);
+            PreparedStatement insertBookStatement = connection.prepareStatement(insertBook);
+            PreparedStatement getLastInsertIdStatement = connection.prepareStatement(getLastInsertId);
+
             for (Book book : books) {
-                PreparedStatement bookStatement = connection.prepareStatement(checkBook);
                 bookStatement.setString(1, book.getCategory());
                 bookStatement.setString(2, book.getTitle());
                 bookStatement.setString(3, book.getPress());
                 bookStatement.setInt(4, book.getPublishYear());
                 bookStatement.setString(5, book.getAuthor());
                 ResultSet resultSet = bookStatement.executeQuery();
-                if (resultSet.next()) { //找到了一样的
+
+                if (resultSet.next()) {
                     rollback(connection);
                     return new ApiResult(false, "Error! Already Exists!");
                 }
-                bookStatement = connection.prepareStatement(insertBook, Statement.RETURN_GENERATED_KEYS);
-                bookStatement.setString(1, book.getCategory());
-                bookStatement.setString(2, book.getTitle());
-                bookStatement.setString(3, book.getPress());
-                bookStatement.setInt(4, book.getPublishYear());
-                bookStatement.setString(5, book.getAuthor());
-                bookStatement.setDouble(6, book.getPrice());
-                bookStatement.setDouble(7, book.getStock());
-                int newRow = bookStatement.executeUpdate();
+
+                insertBookStatement.setString(1, book.getCategory());
+                insertBookStatement.setString(2, book.getTitle());
+                insertBookStatement.setString(3, book.getPress());
+                insertBookStatement.setInt(4, book.getPublishYear());
+                insertBookStatement.setString(5, book.getAuthor());
+                insertBookStatement.setDouble(6, book.getPrice());
+                insertBookStatement.setDouble(7, book.getStock());
+
+                int newRow = insertBookStatement.executeUpdate();
                 if (newRow == 0) {
                     throw new SQLException("Creating book failed, no rows affected.");
                 }
 
-                try (ResultSet generatedKeys = bookStatement.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        book.setBookId(generatedKeys.getInt(1));
-                    } else {
-                        throw new SQLException("Creating book failed, no ID obtained.");
-                    }
+                ResultSet generatedKeys = getLastInsertIdStatement.executeQuery();
+                if (generatedKeys.next()) {
+                    book.setBookId(generatedKeys.getInt(1));
+                } else {
+                    throw new SQLException("Creating book failed, no ID obtained.");
                 }
             }
 
-            commit(connection); // 提交事务
+            commit(connection);
             return new ApiResult(true, "Stored successfully");
         } catch (SQLException e) {
-            rollback(connection); // 发生异常时回滚事务
+            rollback(connection);
             e.printStackTrace();
             return new ApiResult(false, "Error storing book: " + e.getMessage());
         } finally {
             try {
-                connection.setAutoCommit(true); // 恢复自动提交
+                connection.setAutoCommit(true);
             } catch (SQLException e) {
                 e.printStackTrace();
             }
         }
     }
 
-    /**
-     * remove this book from library system.
-     *
-     * Note that if someone has not returned this book,
-     * the book should not be removed!
-     *
-     * @param bookId the book to be removed
-     */
+
     @Override
     public ApiResult removeBook(int bookId) {
         String checkBook = "select * from borrow where book_id = ? and return_time = 0";

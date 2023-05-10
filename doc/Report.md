@@ -201,64 +201,12 @@ public ApiResult incBookStock(int bookId, int deltaStock) {
 }
 ```
 ### 3. 图书批量入库
+#### 要求
++ 一次加入多本书籍
+
 #### 原理
-+ 可能有点问题，一会重写
-#### source code
-```Java
-public ApiResult storeBook(List<Book> books) {  
-	String checkBook = "SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_year = ? AND author = ?";  
-	String insertBook = "INSERT INTO book (category, title, press, publish_year, author, price, stock) VALUES (?, ?, ?, ?, ?, ?, ?)";  
-	Connection connection = connector.getConn();  
-  
-	try {  
-		for (Book book : books) {  
-			PreparedStatement bookStatement = connection.prepareStatement(checkBook);  
-			bookStatement.setString(1, book.getCategory());  
-			bookStatement.setString(2, book.getTitle());  
-			bookStatement.setString(3, book.getPress());  
-			bookStatement.setInt(4, book.getPublishYear());  
-			bookStatement.setString(5, book.getAuthor());  
-			ResultSet resultSet = bookStatement.executeQuery();  
-			if (resultSet.next()) { //找到了一样的  
-				rollback(connection);  
-				return new ApiResult(false, "Error! Already Exists!");  
-			}  
-			bookStatement = connection.prepareStatement(insertBook, Statement.RETURN_GENERATED_KEYS);  
-			bookStatement.setString(1, book.getCategory());  
-			bookStatement.setString(2, book.getTitle());  
-			bookStatement.setString(3, book.getPress());  
-			bookStatement.setInt(4, book.getPublishYear());  
-			bookStatement.setString(5, book.getAuthor());  
-			bookStatement.setDouble(6, book.getPrice());  
-			bookStatement.setDouble(7, book.getStock());  
-			int newRow = bookStatement.executeUpdate();  
-			if (newRow == 0) {  
-				throw new SQLException("Creating book failed, no rows affected.");  
-			}  
-  
-			try (ResultSet generatedKeys = bookStatement.getGeneratedKeys()) {  
-				if (generatedKeys.next()) {  
-					book.setBookId(generatedKeys.getInt(1));  
-				} else {  
-					throw new SQLException("Creating book failed, no ID obtained.");  
-				}  
-			}  
-		}  
-		commit(connection); // 提交事务  
-		return new ApiResult(true, "Stored successfully");  
-	} catch (SQLException e) {  
-		rollback(connection); // 发生异常时回滚事务  
-		e.printStackTrace();  
-		return new ApiResult(false, "Error storing book: " + e.getMessage());  
-	} finally {  
-		try {  
-			connection.setAutoCommit(true); // 恢复自动提交  
-		} catch (SQLException e) {  
-			e.printStackTrace();  
-		}  
-	}  
-}
-```
++ 使用
+
 
 ### 4. 移除书籍
 #### 要求
@@ -318,43 +266,151 @@ return new ApiResult(false, "remove failed");
 #### 要求
 + 对书库中的对应书籍进行信息修改
 #### 原理
-+ 
++ 查询和更新同时进行，使用一条语句，结果集非空则可更新
+```SQL
+update book set category = ? , title = ? , press = ? , publish_year = ? , author = ? , price = ? WHERE book_id = ?
+```
 #### source code
 ```Java
 public ApiResult modifyBookInfo(Book book) {  
-String updateBook = "update book set category = ? , title = ? , press = ? , publish_year = ? , author = ? , price = ? WHERE book_id = ?";  
+	String updateBook = "update book set category = ? , title = ? , press = ? , publish_year = ? , author = ? , price = ? WHERE book_id = ?";  
   
-Connection connection = connector.getConn();  
-try{  
-PreparedStatement bookStatement = connection.prepareStatement(updateBook);  
-bookStatement.setString(1, book.getCategory());  
-bookStatement.setString(2, book.getTitle());  
-bookStatement.setString(3, book.getPress());  
-bookStatement.setInt(4, book.getPublishYear());  
-bookStatement.setString(5, book.getAuthor());  
-bookStatement.setDouble(6, book.getPrice());  
+	Connection connection = connector.getConn();  
+	try{  
+		PreparedStatement bookStatement = connection.prepareStatement(updateBook);  
+		bookStatement.setString(1, book.getCategory());  
+		bookStatement.setString(2, book.getTitle());  
+		bookStatement.setString(3, book.getPress());  
+		bookStatement.setInt(4, book.getPublishYear());  
+		bookStatement.setString(5, book.getAuthor());  
+		bookStatement.setDouble(6, book.getPrice());  
 // bookStatement.setInt(7, book.getStock());  
-bookStatement.setInt(7, book.getBookId());  
+		bookStatement.setInt(7, book.getBookId());  
 // ResultSet resultSet = bookStatement.executeQuery();  
-int newInfo = bookStatement.executeUpdate();  
-if(newInfo == 0){  
-throw new SQLException("Modify failed, no such book!");  
-}  
-commit(connection);  
-return new ApiResult(true, "modified successfully!");  
-} catch (SQLException e) {  
-rollback(connection);  
-e.printStackTrace();  
-return new ApiResult(false, "Error modifying book: " + e.getMessage());  
-}  
-  
+		int newInfo = bookStatement.executeUpdate();  
+		if(newInfo == 0){  
+			throw new SQLException("Modify failed, no such book!");  
+		}  
+		commit(connection);  
+		return new ApiResult(true, "modified successfully!");  
+	} catch (SQLException e) {  
+		rollback(connection);  
+		e.printStackTrace();  
+		return new ApiResult(false, "Error modifying book: " + e.getMessage());  
+	}  
 // return new ApiResult(false, "Unimplemented Function");  
 }
 ```
 
+### 6. 书籍查询
+#### 要求
++ 对于输入的查询条件，对书库中的书籍进行查询，支持类别点查(精确查询)，书名点查(模糊查询)，出版社点查(模糊查询)，年份范围查，作者点查(模糊查询)，价格范围差，同时指定一个排序方式，默认为`book id`升序，返回查询结果。
+#### 原理
++ 使用`StringBuilder`，简化对SQL语句条件的添加，并利用`List`对相应追加条件的待定值`?`进行保存和赋值：
+```Java
+StringBuilder queryBuilder = new StringBuilder("select * from book where 1=1"); // 1=1 占位   
+List<Object> queryParams = new ArrayList<>();  
+  
+if(conditions.getCategory() != null){  
+	queryBuilder.append(" AND category = ?"); //追加条件  
+	queryParams.add(conditions.getCategory());  
+}
+```
++ 模糊查询，使用`LIKE`：
+```SQL
+SELECT * FROM book WHERE title LIKE ? 
+```
+> ? 将被替换为形如%String%的形式，%代表多个或没有字符
+
+#### source code
+```Java
+
+```
+
+### 7. 借书
+#### 要求
++ 对于给定的借书人和借阅书籍以及借阅时间，在书库中查找书籍，若书籍尚有库存，且该借书人不存在借此书不还的情况，则借书成功，生成借书记录，更新表`borrow`
++ 存在批量操作，多个线程对库存同时出现影响的情况，需要解决这种情况
+#### 原理
+##### 库存更新锁
++ 通过加锁，来实现一个线程对一本书籍进行库存操作时，其他线程无法对相同的书籍库存进行更改，从而避免了并发借书的问题
++ SQL语句如下，添加了行级锁：
+```SQL
+SELECT * FROM book WITH (UPDLOCK, ROWLOCK) WHERE book_id = ? AND stock > 0
+```
+##### 插入借书记录
+```SQL
+INSERT INTO borrow (card_id, book_id, borrow_time, return_time) values (?, ?, ?, ?)
+```
+##### 更新库存
+``` SQL
+UPDATE book SET stock = stock - 1 WHERE book_id = ?
+```
+
+### 8. 还书
+#### 要求
++ 对于当前未还的存在书籍，执行还书操作，将库存加一
+#### 原理
++ 查询是否存在以及当前是否存在未还记录
+```SQL
+SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND return_time = 0
+```
++ 若存在未还记录，更新该书库存
+```SQL
+UPDATE book SET stock = stock + 1 WHERE book_id = ?
+```
+
+### 9. 查询用户历史记录
+#### 要求
++ 对给定的用户`Card ID`，显示其全部借阅记录，要求包含书籍信息并按照借阅时间**降序**、`book id`**升序**排序
+#### 原理
++ 先通过`borrow`表查询`book id`，再通过此`book id`在`book`表中查询书籍信息
+1. 查询`book id`
+```SQL
+SELECT * FROM borrow WHERE card_id = ? order by borrow_time DESC, book_id ASC
+```
+2. 查询书籍信息
+```SQL
+SELECT * FROM book WHERE book_id = ?
+```
+
+### 10. 注册用户卡
+#### 要求
++ 给出用户的姓名、部门、用户种类($S$, $T$)信息，生成一个`card id`，需要查重
+#### 原理
++ 查重，新建卡，自动生成`card id`
+```SQL
+select * from card where name = ? and department = ? and type = ?
+insert into card (name, department, type) values (?, ?, ?)
+```
+
+### 11. 删除用户卡
+#### 要求
++ 对于存在的用户卡，若不存在未归还书籍，则可对其用户卡进行删除
+#### 原理
++ 查询对应`card id`的借书记录中，是否有未还书籍
+```SQL
+SELECT * FROM borrow WHERE card_id = ? AND return_time = 0
+```
++ 若无未归还书籍，移除卡
+```SQL
+DELETE FROM card WHERE card_id = ?
+```
+
+### 12. 展示所有用户卡
+#### 要求
++ 以`card id`升序展示所有用户卡
+#### 原理
++ 查询语句
+```SQL 
+SELECT * FROM card order by ASC
+```
 
 ### GUI 
-#### 
+#### 基于Java Swing
+##### JFrame
+##### JButton
+##### JLabel
 # 实验成果
 ### GUI
 + 图书相关操作

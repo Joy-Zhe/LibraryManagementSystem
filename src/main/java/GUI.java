@@ -309,7 +309,10 @@ public class GUI {
                     Card.CardType type = Card.CardType.values(cardType.getText());
 
                     Card c0 = new Card(-1, name, department, type);
-                    library.registerCard(c0);
+                    ApiResult result = library.registerCard(c0);
+                    if(!result.ok) {
+                        JOptionPane.showMessageDialog(registerCard.this, result.message, "Register failure", JOptionPane.ERROR_MESSAGE);
+                    }
                     //clear
                     cardName.setText("");
                     cardDepartment.setText("");
@@ -322,7 +325,10 @@ public class GUI {
                 @Override
                 public void actionPerformed(ActionEvent e) {
                     int cardID = Integer.parseInt(IDText.getText());
-                    library.removeCard(cardID);
+                    ApiResult result = library.removeCard(cardID);
+                    if(!result.ok) {
+                        JOptionPane.showMessageDialog(registerCard.this, result.message, "Remove Failure", JOptionPane.ERROR_MESSAGE);
+                    }
                     //clear
                     IDText.setText("");
                     refreshCard();
@@ -551,7 +557,10 @@ public class GUI {
                 @Override
                 public void actionPerformed(ActionEvent e) {
                     int bookID = Integer.parseInt(BookID.getText());
-                    library.removeBook(bookID);
+                    ApiResult result = library.removeBook(bookID);
+                    if(!result.ok) {
+                        JOptionPane.showMessageDialog(storeBookPanel.this, result.message, "Remove Failure", JOptionPane.ERROR_MESSAGE);
+                    }
                     //clear
                     BookID.setText("");
                     refreshBook();
