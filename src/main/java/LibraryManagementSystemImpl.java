@@ -1,13 +1,10 @@
 import entities.Book;
 import entities.Borrow;
 import entities.Card;
-import org.apache.commons.lang3.ObjectUtils;
 import queries.*;
 import utils.DBInitializer;
 import utils.DatabaseConnector;
 
-import javax.swing.*;
-import javax.swing.plaf.nimbus.State;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -123,14 +120,12 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
     public ApiResult storeBook(List<Book> books) {
         String checkBook = "SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_year = ? AND author = ?";
         String insertBook = "INSERT INTO book (category, title, press, publish_year, author, price, stock) VALUES (?, ?, ?, ?, ?, ?, ?)";
-        String getLastInsertId = "SELECT IDENT_CURRENT('book')";
         Connection connection = connector.getConn();
 
         try {
             connection.setAutoCommit(false);
             PreparedStatement bookStatement = connection.prepareStatement(checkBook);
-            PreparedStatement insertBookStatement = connection.prepareStatement(insertBook);
-            PreparedStatement getLastInsertIdStatement = connection.prepareStatement(getLastInsertId);
+            PreparedStatement insertBookStatement = connection.prepareStatement(insertBook, Statement.RETURN_GENERATED_KEYS);
 
             for (Book book : books) {
                 bookStatement.setString(1, book.getCategory());
@@ -158,23 +153,24 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
                     throw new SQLException("Creating book failed, no rows affected.");
                 }
 
-                ResultSet generatedKeys = getLastInsertIdStatement.executeQuery();
-                if (generatedKeys.next()) {
-                    book.setBookId(generatedKeys.getInt(1));
-                } else {
-                    throw new SQLException("Creating book failed, no ID obtained.");
+                try (ResultSet generatedKeys = insertBookStatement.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        book.setBookId(generatedKeys.getInt(1));
+                    } else {
+                        throw new SQLException("Creating book failed, no ID obtained.");
+                    }
                 }
             }
 
-            commit(connection);
+            commit(connection); // 提交事务
             return new ApiResult(true, "Stored successfully");
         } catch (SQLException e) {
-            rollback(connection);
+            rollback(connection); // 发生异常时回滚事务
             e.printStackTrace();
             return new ApiResult(false, "Error storing book: " + e.getMessage());
         } finally {
             try {
-                connection.setAutoCommit(true);
+                connection.setAutoCommit(true); // 恢复自动提交
             } catch (SQLException e) {
                 e.printStackTrace();
             }
@@ -195,7 +191,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             ResultSet resultSet = bookStatement.executeQuery();
             if(resultSet.next()) {
                 rollback(connection);
-                return new ApiResult(false, "Not returned yet!");
+                return new ApiResult(false, "This book has not been returned yet!");
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -209,16 +205,14 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             int deleteRows = bookStatement.executeUpdate();
             if(deleteRows == 0) {
                 rollback(connection);
-                return new ApiResult(false, "remove failed!");
+                return new ApiResult(false, "Removed Failed! No such book!");
             }
             commit(connection);
-            return new ApiResult(true, "remove successfully!");
+            return new ApiResult(true, "Remove Successfully!");
         } catch (SQLException e) {
-//            throw new RuntimeException(e);
             rollback(connection);
-            return new ApiResult(false, "remove failed");
+            return new ApiResult(false, "Remove Failed!");
         }
-//        return new ApiResult(false, "Unimplemented Function");
     }
 
     @Override
@@ -239,10 +233,10 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
 //            ResultSet resultSet = bookStatement.executeQuery();
             int newInfo = bookStatement.executeUpdate();
             if(newInfo == 0){
-                throw new SQLException("Modify failed, no such book!");
+                return new ApiResult(false, "Modify failed, no such book!");
             }
             commit(connection);
-            return new ApiResult(true, "modified successfully!");
+            return new ApiResult(true, "Modified successfully!");
         } catch (SQLException e) {
             rollback(connection);
             e.printStackTrace();
@@ -327,7 +321,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
         } catch (SQLException e) {
             rollback(connection);
             e.printStackTrace();
-            return new ApiResult(false, "query failed!" + e.getMessage(), null);
+            return new ApiResult(false, "Query failed!" + e.getMessage(), null);
         }
     }
 
@@ -350,7 +344,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
                 //找到存在的bookID，可以继续借书
             } else {
                 rollback(connection);
-                return new ApiResult(false, "no such book_id!");
+                return new ApiResult(false, "No such book!");
             }
             PreparedStatement cardStatement = connection.prepareStatement(checkCard);
             cardStatement.setInt(1, borrow.getCardId());
@@ -360,7 +354,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             }
             else{
                 rollback(connection);
-                return new ApiResult(false, "no such card_id!");
+                return new ApiResult(false, "No such card!");
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -373,7 +367,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             ResultSet resultSet = bookStatement.executeQuery();
             if(resultSet.next()) {
                 rollback(connection);
-                return new ApiResult(false, "borrow already exists!");
+                return new ApiResult(false, "You have not returned the book yet!");
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -388,14 +382,14 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
 
             if (!resultSet.next()) {
                 rollback(connection);
-                return new ApiResult(false, "no such book_id!");
+                return new ApiResult(false, "No such book!");
             }
 
             int stock = resultSet.getInt("stock");
             if (stock <= 0) {
                 rollback(connection);
                 connection.setAutoCommit(true);
-                return new ApiResult(false, "no stock");
+                return new ApiResult(false, "No more book to borrow!");
             }
 
             // Update stock
@@ -421,10 +415,10 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             int newRow = bookStatement.executeUpdate();
             if(newRow > 0) {
                 commit(connection);
-                return new ApiResult(true, "Borrow successfully!");
+                return new ApiResult(true, "Borrowed successfully!");
             } else {
                 rollback(connection);
-                return new ApiResult(false, "borrow failed!");
+                return new ApiResult(false, "Borrow failed!");
             }
         } catch (SQLException e) {
             rollback(connection);
@@ -448,12 +442,12 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             ResultSet resultSet = checkStatement.executeQuery();
             if (!resultSet.next()) {
                 rollback(connection);
-                return new ApiResult(false, "no book to return!");
+                return new ApiResult(false, "No book to be returned!");
             } else {
                 tmp = resultSet.getLong("borrow_time");
                 if (tmp >= borrow.getReturnTime()) {
                     rollback(connection);
-                    return new ApiResult(false, "return time error");
+                    return new ApiResult(false, "Return time error!");
                 }
             }
         } catch (SQLException e) {
@@ -471,14 +465,14 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             if (newRow > 0) {
                 stockStatement.executeUpdate();
                 commit(connection);
-                return new ApiResult(true, "return successfully!");
+                return new ApiResult(true, "Return successfully!");
             } else {
-                return new ApiResult(false, "return failed!");
+                return new ApiResult(false, "Return failed!");
             }
         } catch (SQLException e) {
             rollback(connection);
             e.printStackTrace();
-            return new ApiResult(false, "update failed!");
+            return new ApiResult(false, "Return failed!");
         }
     }
 
@@ -519,10 +513,8 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
         } catch (SQLException e) {
             rollback(connection);
             e.printStackTrace();
-            return new ApiResult(false, "failed");
-//            throw new RuntimeException(e);
+            return new ApiResult(false, "Showing failed!");
         }
-//        return new ApiResult(false, "Unimplemented Function");
     }
 
     @Override
@@ -540,7 +532,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             ResultSet resultSet = bookStatement.executeQuery();
             if(resultSet.next()) { //找到了一样的
                 rollback(connection);
-                return new ApiResult(false, "Error! Already Exists!");
+                return new ApiResult(false, "Error! Card already Exists!");
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -560,15 +552,15 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
                 if (generatedKeys.next()) {
                     card.setCardId(generatedKeys.getInt(1));
                 } else {
-                    throw new SQLException("Creating book failed, no ID obtained.");
+                    throw new SQLException("Creating card failed, no ID obtained.");
                 }
             }
             commit(connection);
-            return new ApiResult(true, "Stored successfully");
+            return new ApiResult(true, "Registered successfully");
         } catch (SQLException e) {
             rollback(connection);
             e.printStackTrace();
-            return new ApiResult(false, "Error storing book: " + e.getMessage());
+            return new ApiResult(false, "Error registering card: " + e.getMessage());
 //            throw new RuntimeException(e);
         }
     }
@@ -584,7 +576,7 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
             ResultSet resultSet = cardStatement.executeQuery();
             if(resultSet.next()) {
                 rollback(connection);
-                return new ApiResult(false, "removeCard failed!");
+                return new ApiResult(false, "Remove card failed!");
             }
         } catch (SQLException e) {
             throw new RuntimeException(e);
@@ -599,13 +591,13 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
                 return new ApiResult(true, "removeCard successfully!");
             } else {
                 rollback(connection);
-                return new ApiResult(false, "removeCard failed!");
+                return new ApiResult(false, "Remove card failed!");
             }
         } catch (SQLException e) {
             rollback(connection);
             e.printStackTrace();
 //            throw new RuntimeException(e);
-            return new ApiResult(false, "removeCard failed!");
+            return new ApiResult(false, "Remove card failed!");
         }
 //        return new ApiResult(false, "Unimplemented Function");
     }
@@ -634,9 +626,8 @@ public class LibraryManagementSystemImpl implements LibraryManagementSystem {
         } catch (SQLException e) {
             rollback(connection);
             e.printStackTrace();
-            return new ApiResult(false, "fail");
+            return new ApiResult(false, "Show cards failed!");
         }
-//        return new ApiResult(false, "Unimplemented Function");
     }
 
     @Override

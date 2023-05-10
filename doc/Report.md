@@ -74,59 +74,6 @@ SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_ye
 ```SQL
 INSERT INTO book (category, title, press, publish_year, author, price, stock) VALUES (?, ?, ?, ?, ?, ?, ?)
 ```
-#### source code
-```Java
-public ApiResult storeBook(Book book) {  
-String checkBook = "SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_year = ? AND author = ?";  
-String insertBook = "INSERT INTO book (category, title, press, publish_year, author, price, stock) VALUES (?, ?, ?, ?, ?, ?, ?)";  
-Connection connection = connector.getConn();  
-  
-try {  
-PreparedStatement bookStatement = connection.prepareStatement(checkBook);  
-bookStatement.setString(1, book.getCategory());  
-bookStatement.setString(2, book.getTitle());  
-bookStatement.setString(3, book.getPress());  
-bookStatement.setInt(4, book.getPublishYear());  
-bookStatement.setString(5, book.getAuthor());  
-ResultSet resultSet = bookStatement.executeQuery();  
-if(resultSet.next()) { //找到了一样的  
-return new ApiResult(false, "Error! Already Exists!");  
-}  
-} catch (SQLException e) {  
-throw new RuntimeException(e);  
-}  
-  
-try {  
-PreparedStatement bookStatement = connection.prepareStatement(insertBook, Statement.RETURN_GENERATED_KEYS);// 补全占位符，获取自动主键  
-bookStatement.setString(1, book.getCategory());  
-bookStatement.setString(2, book.getTitle());  
-bookStatement.setString(3, book.getPress());  
-bookStatement.setInt(4, book.getPublishYear());  
-bookStatement.setString(5, book.getAuthor());  
-bookStatement.setDouble(6, book.getPrice());  
-bookStatement.setDouble(7, book.getStock());  
-int newRow = bookStatement.executeUpdate();  
-if (newRow == 0) {  
-throw new SQLException("Creating book failed, no rows affected.");  
-}  
-  
-try (ResultSet generatedKeys = bookStatement.getGeneratedKeys()) {  
-if (generatedKeys.next()) {  
-book.setBookId(generatedKeys.getInt(1));  
-} else {  
-throw new SQLException("Creating book failed, no ID obtained.");  
-}  
-}  
-commit(connection);  
-return new ApiResult(true, "Stored successfully");  
-} catch (SQLException e) {  
-rollback(connection);  
-e.printStackTrace();  
-return new ApiResult(false, "Error storing book: " + e.getMessage());  
-// throw new RuntimeException(e);  
-}  
-}
-```
 ### 2. 减少库存
 #### 功能要求
 + 对于输入的两个参数`bookID`, `deltaStock`，先对书库中的书籍进行查询，如果书籍不存在，则减少库存失败；若书籍存在，需要先对书籍现在的库存进行检测，若书籍的库存不足以减少这么多书籍，则减少库存失败，反之更新库存。
@@ -155,57 +102,18 @@ catch (SQLException e) {
 ```SQL
 UPDATE book SET stock = stock + ? WHERE book_id = ?
 ```
-#### source code
-```Java
-public ApiResult incBookStock(int bookId, int deltaStock) {  
-	String checkStock = "select * from book where book_id = ?";  
-	String inclineStock = "update book set stock = stock + ? where book_id = ?";  
-	Connection connection = connector.getConn();  
-  
-	try {  
-		PreparedStatement checkStatement = connection.prepareStatement(checkStock);  
-		checkStatement.setInt(1, bookId);  
-		ResultSet resultSet = checkStatement.executeQuery();  
-		if (resultSet.next()) {  
-			int currentStock = resultSet.getInt("stock");  
-			if (currentStock + deltaStock < 0) {  
-				rollback(connection);  
-				return new ApiResult(false, "No such books to be incline!");  
-			}  
-		} else {  
-			rollback(connection);  
-			return new ApiResult(false, "No such book_id!");  
-		}  
-	} catch (SQLException e) {  
-		throw new RuntimeException(e);  
-	}  
-  
-	try {  
-		PreparedStatement inclineStatement = connection.prepareStatement(inclineStock);
-		inclineStatement.setInt(1, deltaStock);  
-		inclineStatement.setInt(2, bookId);  
-		int newRow = inclineStatement.executeUpdate();  
-  
-		if (newRow > 0) {  
-			commit(connection);  
-			return new ApiResult(true, "Incline Successfully!");  
-		} else {  
-			rollback(connection);  
-			return new ApiResult(false, "Incline failed!");  
-		}  
-	} catch (SQLException e) {  
-		rollback(connection);  
-		e.printStackTrace();  
-		return new ApiResult(false, "Incline failed!");  
-	}  
-}
-```
+
 ### 3. 图书批量入库
 #### 要求
-+ 一次加入多本书籍
-
++ 一次加入多本书籍，同时，对这些插入的书籍也进行和单本一样的查重，一旦有重复，则插入失败，整个List无重复则插入成功
 #### 原理
-+ 使用
++ 对书籍进行查重以及插入的SQL语句
+```SQL
+SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_year = ? AND author = ?
+INSERT INTO book (category, title, press, publish_year, author, price, stock) VALUES (?, ?, ?, ?, ?, ?, ?)
+```
++ 对列表中的书籍，使用循环进行插入，每插入一本，使用查重语句进行查询，若查询结果集非空，则可以返回false，终止插入，回滚更改，否则继续处理下一条数据。
++ 若所有数据均无重复，则实现正确插入
 
 
 ### 4. 移除书籍
@@ -221,46 +129,7 @@ SELECT * FROM borrow WHERE book_id = ? and return_time = 0
 ```SQL
 DELETE FROM book WHERE book_id = ?
 ```
-#### source code
-```Java
-public ApiResult removeBook(int bookId) {  
-	String checkBook = "select * from borrow where book_id = ? and return_time = 0";  
-	String removeBook = "delete from book where book_id = ?";  
-Connection connection = connector.getConn();  
-  
-//check  
-	try {  
-		PreparedStatement bookStatement = connection.prepareStatement(checkBook);  
-		bookStatement.setInt(1, bookId);  
-		ResultSet resultSet = bookStatement.executeQuery();  
-		if(resultSet.next()) {  
-			rollback(connection);  
-			return new ApiResult(false, "Not returned yet!");  
-		}  
-	} catch (SQLException e) {  
-		throw new RuntimeException(e);  
-	}  
-  
-	//remove  
-	try {  
-		PreparedStatement bookStatement = connection.prepareStatement(removeBook);  
-		bookStatement.setInt(1, bookId);  
-	// commit(connection);  
-		int deleteRows = bookStatement.executeUpdate();  
-	if(deleteRows == 0) {  
-		rollback(connection);  
-		return new ApiResult(false, "remove failed!");  
-	}  
-		commit(connection);  
-		return new ApiResult(true, "remove successfully!");  
-} catch (SQLException e) {  
-// throw new RuntimeException(e);  
-rollback(connection);  
-return new ApiResult(false, "remove failed");  
-}  
-// return new ApiResult(false, "Unimplemented Function");  
-}
-```
+
 
 ### 5. 更改图书信息
 #### 要求
@@ -269,37 +138,6 @@ return new ApiResult(false, "remove failed");
 + 查询和更新同时进行，使用一条语句，结果集非空则可更新
 ```SQL
 update book set category = ? , title = ? , press = ? , publish_year = ? , author = ? , price = ? WHERE book_id = ?
-```
-#### source code
-```Java
-public ApiResult modifyBookInfo(Book book) {  
-	String updateBook = "update book set category = ? , title = ? , press = ? , publish_year = ? , author = ? , price = ? WHERE book_id = ?";  
-  
-	Connection connection = connector.getConn();  
-	try{  
-		PreparedStatement bookStatement = connection.prepareStatement(updateBook);  
-		bookStatement.setString(1, book.getCategory());  
-		bookStatement.setString(2, book.getTitle());  
-		bookStatement.setString(3, book.getPress());  
-		bookStatement.setInt(4, book.getPublishYear());  
-		bookStatement.setString(5, book.getAuthor());  
-		bookStatement.setDouble(6, book.getPrice());  
-// bookStatement.setInt(7, book.getStock());  
-		bookStatement.setInt(7, book.getBookId());  
-// ResultSet resultSet = bookStatement.executeQuery();  
-		int newInfo = bookStatement.executeUpdate();  
-		if(newInfo == 0){  
-			throw new SQLException("Modify failed, no such book!");  
-		}  
-		commit(connection);  
-		return new ApiResult(true, "modified successfully!");  
-	} catch (SQLException e) {  
-		rollback(connection);  
-		e.printStackTrace();  
-		return new ApiResult(false, "Error modifying book: " + e.getMessage());  
-	}  
-// return new ApiResult(false, "Unimplemented Function");  
-}
 ```
 
 ### 6. 书籍查询
@@ -322,10 +160,6 @@ SELECT * FROM book WHERE title LIKE ?
 ```
 > ? 将被替换为形如%String%的形式，%代表多个或没有字符
 
-#### source code
-```Java
-
-```
 
 ### 7. 借书
 #### 要求
