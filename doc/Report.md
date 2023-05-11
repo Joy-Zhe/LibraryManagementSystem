@@ -242,9 +242,28 @@ SELECT * FROM card order by ASC
 
 ### GUI 
 #### 基于Java Swing
-##### JFrame
-##### JButton
-##### JLabel
+##### 多界面跳转
++ 通过JPanel实现：
+> 以其中一个跳转界面按钮为例
+```Java
+storeBookButton.addActionListener(new ActionListener() {  
+	@Override  
+	public void actionPerformed(ActionEvent e) {  
+		CardLayout cardLayout = (CardLayout) cards.getLayout();  
+		cardLayout.show(cards, "storeBook");  
+	}  
+});
+```
+##### 错误消息弹窗
++ 利用JOptionPane，对函数返回中的错误信息进行调用，正确执行时不弹窗:
+```Java
+ApiResult result = library.removeCard(cardID);  
+if(!result.ok) {  
+	JOptionPane.showMessageDialog(registerCard.this, result.message, "Remove Failure", JOptionPane.ERROR_MESSAGE);  
+}
+```
+
+
 # 实验成果
 ### GUI
 + 图书相关操作
