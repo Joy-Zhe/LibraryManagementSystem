@@ -307,7 +307,6 @@ public class GUI {
                     String name = cardName.getText();
                     String department = cardDepartment.getText();
                     Card.CardType type = Card.CardType.values(cardType.getText());
-
                     Card c0 = new Card(-1, name, department, type);
                     ApiResult result = library.registerCard(c0);
                     if(!result.ok) {

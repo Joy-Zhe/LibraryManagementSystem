@@ -1,5 +1,5 @@
-# 实验5 图书管理系统
-### 郑乔尹 3210104169
+# <center>实验5 图书管理系统<center>
+### <center>郑乔尹 3210104169<center>
 # 实验目的
 1. 设计并实现一个精简的图书管理系统，具有**入库**、**查询**、**借书**、**还书**、**借书证管理**等基本功能
 2. 通过本次设计来加深对数据库的了解和使用，同时提高自身的系统编程能力
@@ -7,6 +7,8 @@
 1. 数据库平台：SQL Server 2022
 2. 操作系统：Windows11 22H2
 3. 开发工具：JetBrain IntelliJ IDEA
+4. 实验环境：Java 17.0.6
+5. SQL server端口：1433（默认端口）
 # 实验内容和要求
 1. 基于JDBC开发一个图书管理系统，要求实现如下功能
 
@@ -59,16 +61,73 @@ create table `borrow` (
 ```
 
 # 实验过程
+### E-R Diagram
+![[0EAA589AFC277112ED2F5009A91A8152.png]]
+### 参数化查询
++ 通过以下形式对输入的数据进行处理以避免SQL注入攻击（以`storeBook`为例）：
+```Java
+@Override  
+public ApiResult storeBook(Book book) {  
+	String checkBook = "SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_year = ? AND author = ?";  
+	String insertBook = "INSERT INTO book (category, title, press, publish_year, author, price, stock) VALUES (?, ?, ?, ?, ?, ?, ?)";  
+	Connection connection = connector.getConn();  
+	try {  
+		PreparedStatement bookStatement = connection.prepareStatement(checkBook);  
+		bookStatement.setString(1, book.getCategory());  
+		bookStatement.setString(2, book.getTitle());  
+		bookStatement.setString(3, book.getPress());  
+		bookStatement.setInt(4, book.getPublishYear());  
+		bookStatement.setString(5, book.getAuthor());  
+		ResultSet resultSet = bookStatement.executeQuery();  
+		if(resultSet.next()) { //找到了一样的  
+			return new ApiResult(false, "Error! Already Exists!");  
+		}  
+	} catch (SQLException e) {  
+		throw new RuntimeException(e);  
+	}  
+  
+	try {  
+		PreparedStatement bookStatement = connection.prepareStatement(insertBook, Statement.RETURN_GENERATED_KEYS);// 补全占位符，获取自动主键  
+		bookStatement.setString(1, book.getCategory());  
+		bookStatement.setString(2, book.getTitle());  
+		bookStatement.setString(3, book.getPress());  
+		bookStatement.setInt(4, book.getPublishYear());  
+		bookStatement.setString(5, book.getAuthor());  
+		bookStatement.setDouble(6, book.getPrice());  
+		bookStatement.setDouble(7, book.getStock());  
+		int newRow = bookStatement.executeUpdate();  
+		if (newRow == 0) {  
+			throw new SQLException("Creating book failed, no rows affected.");  
+		}  
+  
+		try (ResultSet generatedKeys = bookStatement.getGeneratedKeys()) {//获取主键，赋值回book  
+			if (generatedKeys.next()) {  
+				book.setBookId(generatedKeys.getInt(1));  
+			} else {  
+				throw new SQLException("Creating book failed, no ID obtained.");  
+			}  
+		}  
+		commit(connection);  
+		return new ApiResult(true, "Stored successfully");  
+	} catch (SQLException e) {  
+		rollback(connection);  
+		e.printStackTrace();  
+		return new ApiResult(false, "Error storing book: " + e.getMessage());  
+	// throw new RuntimeException(e);  
+	}  
+}
+```
+
 ### 1. 单本图书入库
 #### 功能要求
-+ 对单本图书进行入库，要求实现查重功能，对category, title, press， publish year, author三个字段进行查重操作，即对于这五个字段相同的书籍，视为重复书籍，不进行入库
++ 对单本图书进行入库，要求实现查重功能，对`category`, `title`, `press`，`publish year`, `author`三个字段进行查重操作，即对于这五个字段相同的书籍，视为重复书籍，不进行入库
 + 对于不重复的书籍，分配book id，入库
 #### 原理
 + 采用如下SQL语句
-+ 由于book id设为自动分配的主键，会自动生成当前最后一个连续值
+> 由于`book id`设为自动分配的主键，会自动生成当前最后一个连续值
 ##### 书籍查重
 ```SQL
-SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_year = ? AND author = 
+SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_year = ? AND author = ?
 ```
 ##### 插入书籍
 ```SQL
@@ -113,8 +172,7 @@ SELECT * FROM book WHERE category = ? AND title = ? AND press = ? AND publish_ye
 INSERT INTO book (category, title, press, publish_year, author, price, stock) VALUES (?, ?, ?, ?, ?, ?, ?)
 ```
 + 对列表中的书籍，使用循环进行插入，每插入一本，使用查重语句进行查询，若查询结果集非空，则可以返回false，终止插入，回滚更改，否则继续处理下一条数据。
-+ 若所有数据均无重复，则实现正确插入
-
++ 若所有数据均无重复，则实现正确插入。
 
 ### 4. 移除书籍
 #### 要求
@@ -129,7 +187,6 @@ SELECT * FROM borrow WHERE book_id = ? and return_time = 0
 ```SQL
 DELETE FROM book WHERE book_id = ?
 ```
-
 
 ### 5. 更改图书信息
 #### 要求
@@ -155,11 +212,10 @@ if(conditions.getCategory() != null){
 }
 ```
 + 模糊查询，使用`LIKE`：
+> ? 将被替换为形如%String%的形式，%代表多个或没有字符
 ```SQL
 SELECT * FROM book WHERE title LIKE ? 
 ```
-> ? 将被替换为形如%String%的形式，%代表多个或没有字符
-
 
 ### 7. 借书
 #### 要求
@@ -192,6 +248,27 @@ SELECT * FROM borrow WHERE card_id = ? AND book_id = ? AND return_time = 0
 + 若存在未还记录，更新该书库存
 ```SQL
 UPDATE book SET stock = stock + 1 WHERE book_id = ?
+```
++ 检查还书时间是否合法：
+```Java
+try {  
+	PreparedStatement checkStatement = connection.prepareStatement(checkBorrowBook);  
+	checkStatement.setInt(1, borrow.getCardId());  
+	checkStatement.setInt(2, borrow.getBookId());  
+	ResultSet resultSet = checkStatement.executeQuery();  
+	if (!resultSet.next()) {  
+		rollback(connection);  
+		return new ApiResult(false, "No book to be returned!");  
+	} else {  
+	tmp = resultSet.getLong("borrow_time");  
+		if (tmp >= borrow.getReturnTime()) { //在此检测时间合法性 
+			rollback(connection);  
+			return new ApiResult(false, "Return time error!");  
+		}  
+	}  
+} catch (SQLException e) {  
+	throw new RuntimeException(e);  
+}
 ```
 
 ### 9. 查询用户历史记录
@@ -236,12 +313,13 @@ DELETE FROM card WHERE card_id = ?
 + 以`card id`升序展示所有用户卡
 #### 原理
 + 查询语句
-```SQL 
+```SQL
 SELECT * FROM card order by ASC
 ```
 
-### GUI 
+### GUI
 #### 基于Java Swing
++ 以下展示部分控件的原理，其余控件均为相似操作
 ##### 多界面跳转
 + 通过JPanel实现：
 > 以其中一个跳转界面按钮为例
@@ -262,9 +340,74 @@ if(!result.ok) {
 	JOptionPane.showMessageDialog(registerCard.this, result.message, "Remove Failure", JOptionPane.ERROR_MESSAGE);  
 }
 ```
-
-
+##### 按钮
++ 添加按钮
+```Java
+JButton removeBookButton = new JButton("Remove Book");  
+removeBookButton.setBounds(100, 370, 170, 30);  
+add(removeBookButton);
+```
++ 添加监视器
+```Java
+removeBookButton.addActionListener(new ActionListener() {  
+	@Override  
+	public void actionPerformed(ActionEvent e) {  
+		int bookID = Integer.parseInt(BookID.getText());  
+		ApiResult result = library.removeBook(bookID);  
+		if(!result.ok) {  
+		JOptionPane.showMessageDialog(storeBookPanel.this, result.message, "Remove Failure", JOptionPane.ERROR_MESSAGE);  
+		}  
+		//clear  
+		BookID.setText("");  
+		refreshBook();  
+	}  
+});
+```
+##### 文本框
+```Java
+JLabel Title = new JLabel("Title");  
+Title.setBounds(100, 130, 70, 30);  
+add(Title);  
+JTextField bookTitle = new JTextField(70);  
+bookTitle.setBounds(170,130,100,30);
+add(bookTitle);
+```
+##### 列表
+```Java
+public void refreshBook(BookQueryConditions conditions) {  
+	DefaultTableModel tableModel = (DefaultTableModel) bookTable.getModel();  
+	tableModel.setRowCount(0);  
+	ApiResult result = library.queryBook(conditions);  
+	if(result.ok) {  
+		BookQueryResults queryResults = (BookQueryResults) result.payload;  
+		List<Book> books = queryResults.getResults();  
+		for(Book book:books) {  
+			tableModel.addRow(new Object[]{  
+				book.getBookId(),  
+				book.getCategory(),  
+				book.getTitle(),  
+				book.getPress(),  
+				book.getPublishYear(),  
+				book.getAuthor(),  
+				book.getPrice(),  
+				book.getStock()  
+			});  
+		}  
+	}  
+}
+```
+##### 下拉选框
+```Java
+String[] options = {"Book ID", "Category", "Title", "Press", "PublishYear", "Author", "Price"};  
+JComboBox<String> sortOptions = new JComboBox<>(options);  
+sortOptions.setBounds(170, 490, 100, 30);  
+add(sortOptions);
+```
 # 实验成果
++ 测试通过情况
+![[Pasted image 20230515215606.png]]
+
++ GUI功能在验收时详细演示
 ### GUI
 + 图书相关操作
 ![](pic/book.png)
@@ -274,3 +417,20 @@ if(!result.ok) {
 
 + 借书卡相关操作
 ![](card.png)
+
+# 实验心得
++ 通过此次实验，我了解了如何使用JDBC开发一个图书管理系统，了解了如何通过添加行级锁解决并发问题的方法。同时，这个实验锻炼了我的系统编程能力，进一步的巩固了我对课上所学的SQL语句的认识与运用。
++ 同时，我对思考题中提到的SQL注入攻击，并发访问的正确性保证都做了初步的了解：
+  1. SQL注入攻击
+	  + 攻击者通过应用程序的输入字段插入SQL语句从而使之在数据库中执行意外的语句，比如对于一个登录功能，可以有以下注入攻击：
+> 以下是正常语句
+```SQL
+SELECT * FROM Users WHERE Username = '[username]' AND Password = '[password]'
+```
+> 以下是攻击语句
+```SQL
+SELECT * FROM Users WHERE Username = '"" OR ""=""' AND Password = '[password]'
+```
++ 因为 `""=""` 总是为真，所以这个查询将返回所有用户，在图书管理系统中，每一个接受输入信息的位置都可能遭受SQL注入攻击，所以我采用了参数化查询。
+ 2. 高并发情况
++ 我为借书操作添加了行级锁从而解决了默认隔离级别下的并发借书问题。
